@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo using TypeScript. Includes a SplitEasy mobile app (Expo) and shared backend infrastructure.
 
 ## Stack
 
@@ -15,6 +15,24 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+
+## Artifacts
+
+### SplitEasy (`artifacts/spliteasy`)
+- **Type**: Expo mobile app
+- **Description**: Bill-splitting app for groups — create/join groups, track expenses, view balances, settle up
+- **Storage**: AsyncStorage (no backend, fully local)
+- **Navigation**: Expo Router with stack-based routing
+- **Key screens**:
+  - `app/index.tsx` — Home screen with recent groups
+  - `app/create-group.tsx` — Create a new group
+  - `app/join-group.tsx` — Join a group by 6-char code
+  - `app/group/[code].tsx` — Group dashboard with Expenses, Balances, Settle Up tabs
+- **Key utilities**:
+  - `utils/storage.ts` — AsyncStorage read/write helpers
+  - `utils/balance.ts` — Balance calculation + debt simplification
+  - `utils/helpers.ts` — Format currency, dates, generate codes
+- **Theme**: `constants/theme.ts` — Colors, spacing, fonts
 
 ## Key Commands
 

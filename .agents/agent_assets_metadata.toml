@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "mLr6hN52GZqhOhBA7zyTB"
+uri = "file://artifacts/spliteasy/assets/images/icon.png"
+type = "image"
+title = "spliteasy app icon"

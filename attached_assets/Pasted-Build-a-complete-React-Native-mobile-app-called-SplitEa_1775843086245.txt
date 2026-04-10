@@ -1,0 +1,218 @@
+Build a complete React Native mobile app called "SplitEasy" using Expo. This should run as a mobile app (Android + iOS). Use Expo Router for navigation and AsyncStorage for local data (no backend needed).
+
+---
+
+## TECH STACK
+- Framework: React Native + Expo (SDK 51)
+- Navigation: Expo Router (file-based routing)
+- Storage: AsyncStorage (all data stored locally on device)
+- Styling: StyleSheet + custom theme (no Tailwind)
+- Icons: @expo/vector-icons (Ionicons)
+- No backend, no database, no login required
+
+---
+
+## COLOR THEME
+- Primary: #16a34a (green)
+- Background: #f9fafb (light gray)
+- Card: #ffffff (white)
+- Text primary: #111827
+- Text secondary: #6b7280
+- Danger: #ef4444 (red)
+- Success: #16a34a (green)
+- Border: #e5e7eb
+
+---
+
+## SCREENS & NAVIGATION
+
+### Stack 1 — Home
+File: app/index.jsx
+- App logo + "SplitEasy" title + tagline "Split bills. Not friendships."
+- Big green "Create New Group" button
+- "Join Group" button (enter 6-char code)
+- "Recent Groups" list (from AsyncStorage) — tappable cards
+- Each recent group card shows: group name, member count, last activity date
+- Empty state if no groups yet (friendly emoji illustration)
+
+### Stack 2 — Create Group
+File: app/create-group.jsx
+- Input: Group name
+- Input: Your name
+- Dynamic list to add more member names (+ Add Member button)
+- "Create Group" button → generates unique 6-char code → saves to AsyncStorage → navigates to Group Dashboard
+
+### Stack 3 — Join Group
+File: app/join-group.jsx
+- Large text input for 6-char group code (auto uppercase)
+- "Join" button → looks up code in AsyncStorage → navigate to dashboard
+
+### Stack 4 — Group Dashboard
+File: app/group/[code].jsx
+- Header: group name + member count
+- Group code with copy button (Clipboard API)
+- Bottom tab navigator with 3 tabs:
+  1. Expenses
+  2. Balances
+  3. Settle Up
+
+---
+
+## TAB 1 — EXPENSES
+
+- FlatList of expense cards
+- Each card shows:
+  - Category icon (colored circle with emoji: 🍕 Food, ✈️ Travel, 🏠 Rent, 🎉 Fun, 📦 Other)
+  - Expense title + amount (₹)
+  - "Paid by [Name]" + date
+  - Swipe left to delete (with confirmation alert)
+- Floating "+" button (bottom right) → opens Add Expense modal
+- Empty state: "No expenses yet. Add your first one!"
+
+### Add Expense Modal (Bottom Sheet style)
+- Title input
+- Amount input (numeric keyboard, ₹ prefix)
+- Category picker (horizontal scrollable chips)
+- "Paid by" picker (member list)
+- Split type toggle: Equal | Custom
+  - Equal: shows each person's share automatically
+  - Custom: input field for each member (validates sum = total)
+- Date picker (defaults to today)
+- "Save Expense" button (green, full width)
+- "Cancel" button
+
+---
+
+## TAB 2 — BALANCES
+
+- Summary cards per member:
+  - Avatar circle with initials
+  - Name
+  - "Paid ₹X total"
+  - Net balance: green "+₹X (gets back)" or red "-₹X (owes)"
+- Divider
+- "Simplified Debts" section:
+  - Each row: "[Name] owes [Name] ₹X"
+  - Arrow icon between names
+  - Clean card style
+
+### Balance Calculation Logic:
+1. Loop all expenses → record paid_by and each member's owed amount
+2. Net balance per person = total_paid - total_owed
+3. Greedy simplification:
+   - creditors = members with positive balance (sorted desc)
+   - debtors = members with negative balance (sorted asc)
+   - Match largest debtor to largest creditor, reduce, repeat
+4. Return minimal list of "A owes B ₹X"
+
+---
+
+## TAB 3 — SETTLE UP
+
+- List of pending settlements (from balance calculation)
+- Each row:
+  - From name → To name
+  - Amount in green
+  - "Mark Paid" button (outline style)
+  - "Pay via UPI" button → opens upi://pay?pa=&am=XXX&cu=INR deeplink
+- Completed settlements section (grayed out, checkmark icon)
+- If all settled: success illustration + "All settled up! 🎉"
+
+---
+
+## DATA STRUCTURE (AsyncStorage)
+
+Key: "splitease_groups" → array of group objects
+
+Group object:
+{
+  id: string,
+  code: string (6 chars uppercase),
+  name: string,
+  createdAt: string,
+  members: [{ id, name }],
+  expenses: [
+    {
+      id, title, amount, category,
+      paidById, date,
+      splits: [{ memberId, amountOwed }]
+    }
+  ],
+  settlements: [
+    { id, fromId, toId, amount, isPaid }
+  ]
+}
+
+---
+
+## COMPONENTS TO BUILD
+
+components/
+- GroupCard.jsx — recent group card on home screen
+- ExpenseCard.jsx — individual expense row
+- MemberAvatar.jsx — circle with initials + color
+- BalanceCard.jsx — member balance summary
+- DebtRow.jsx — "A owes B ₹X" row
+- SettlementRow.jsx — settle up row with buttons
+- EmptyState.jsx — friendly empty screen component
+- Toast.jsx — bottom toast notification
+- CategoryChip.jsx — scrollable category selector
+
+---
+
+## UX DETAILS
+
+- All screens: safe area aware (SafeAreaView)
+- Keyboard avoiding view on all forms
+- Haptic feedback on button press (expo-haptics)
+- Smooth screen transitions
+- Pull to refresh on expense list
+- Amount always formatted as ₹1,234.00
+- Dates shown as "Today", "Yesterday", or "12 Apr"
+- Member avatar colors auto-assigned from a palette (one color per member)
+- Group code always shown in monospace font, uppercase
+- Confirm alert before deleting expense
+- Show toast: "Expense added!", "Copied!", "Marked as paid!"
+- All buttons have activeOpacity for press feedback
+
+---
+
+## APP ICON & SPLASH
+- App icon: green circle with a white ₹ split into two halves
+- Splash screen: white background + centered SplitEasy logo + green tagline
+
+---
+
+## FOLDER STRUCTURE
+
+splitease/
+├── app/
+│   ├── index.jsx              (Home)
+│   ├── create-group.jsx       (Create Group)
+│   ├── join-group.jsx         (Join Group)
+│   └── group/
+│       └── [code].jsx         (Group Dashboard with tabs)
+├── components/                (All reusable components)
+├── utils/
+│   ├── storage.js             (AsyncStorage read/write helpers)
+│   ├── balance.js             (Balance calculation + debt simplification)
+│   └── helpers.js             (Format currency, dates, generate codes)
+├── constants/
+│   └── theme.js               (Colors, fonts, spacing)
+├── assets/                    (Icons, splash)
+├── app.json                   (Expo config)
+└── package.json
+
+---
+
+## PACKAGES TO INSTALL
+
+expo install @react-native-async-storage/async-storage
+expo install expo-router
+expo install expo-haptics
+expo install expo-clipboard
+expo install @expo/vector-icons
+
+---
+
+Build the complete, fully working app. Every screen must be polished, mobile-friendly, and pixel-perfect. Prioritize smooth UX, readable code, and a beautiful green-and-white design. Make it feel like a real App Store quality app.
