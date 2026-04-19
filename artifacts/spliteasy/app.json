@@ -23,7 +23,8 @@
     "android": {
       "package": "com.spliteasy.app",
       "permissions": [
-        "android.permission.READ_CONTACTS"
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
       ]
     },
     "web": {
@@ -45,6 +46,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "76f54751-70eb-4d62-974e-f74634853ba1"
+      }
     }
   }
 }
