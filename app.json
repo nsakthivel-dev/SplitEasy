@@ -1,12 +1,55 @@
 {
   "expo": {
+    "name": "SplitEasy",
+    "slug": "spliteasy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./artifacts/spliteasy/assets/images/icon.png",
+    "scheme": "spliteasy",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./artifacts/spliteasy/assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#16a34a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.spliteasy.app",
+      "infoPlist": {
+        "NSContactsUsageDescription": "SplitEasy uses contacts to help you quickly add members to your expense groups by selecting from your phone's contact list."
+      }
+    },
+    "android": {
+      "package": "com.spliteasy.app",
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ]
+    },
+    "web": {
+      "favicon": "./artifacts/spliteasy/assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "SplitEasy uses contacts to help you quickly add members to your expense groups by selecting from your phone's contact list."
+        }
+      ]
+    ],
+    "updates": {
+      "enabled": false
+    },
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
     "extra": {
       "eas": {
         "projectId": "9382f1c1-986e-4535-81bf-695815f1d6c8"
       }
-    },
-    "android": {
-      "package": "com.sakthiveldev.workspace"
     }
   }
 }
