@@ -5,8 +5,7 @@
   },
   "build": {
     "base": {
-      "pnpm": "9.15.9",
-      "workingDirectory": "artifacts/spliteasy"
+      "pnpm": "9.15.9"
     },
     "development": {
       "extends": "base",

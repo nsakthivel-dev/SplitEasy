@@ -10,7 +10,9 @@
     "start:localhost": "pnpm --filter @workspace/spliteasy start -- --localhost",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "eas-build-pre-install": "cd artifacts/spliteasy && pnpm exec expo prebuild --no-install --platform android || true",
+    "eas-build-post-install": "cd artifacts/spliteasy && pnpm exec expo prebuild --no-install --platform android || true"
   },
   "private": true,
   "devDependencies": {
