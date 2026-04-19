@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "9382f1c1-986e-4535-81bf-695815f1d6c8"
+      }
+    },
+    "android": {
+      "package": "com.sakthiveldev.workspace"
+    }
+  }
+}

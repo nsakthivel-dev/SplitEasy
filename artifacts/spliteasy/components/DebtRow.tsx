@@ -15,7 +15,13 @@ interface Props {
 export function DebtRow({ debt, fromIndex, toIndex }: Props) {
   return (
     <View style={styles.row}>
-      <MemberAvatar name={debt.from.name} index={fromIndex} size={36} fontSize={13} />
+      <MemberAvatar
+        name={debt.from.name}
+        index={fromIndex}
+        size={36}
+        fontSize={13}
+        avatarUri={debt.from.avatarUri}
+      />
       <View style={styles.info}>
         <Text style={styles.text}>
           <Text style={styles.name}>{debt.from.name}</Text>
@@ -26,7 +32,13 @@ export function DebtRow({ debt, fromIndex, toIndex }: Props) {
       <View style={styles.arrowWrap}>
         <Ionicons name="arrow-forward" size={14} color={COLORS.textSecondary} />
       </View>
-      <MemberAvatar name={debt.to.name} index={toIndex} size={36} fontSize={13} />
+      <MemberAvatar
+        name={debt.to.name}
+        index={toIndex}
+        size={36}
+        fontSize={13}
+        avatarUri={debt.to.avatarUri}
+      />
       <Text style={styles.amount}>{formatCurrency(debt.amount)}</Text>
     </View>
   );

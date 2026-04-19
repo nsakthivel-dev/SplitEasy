@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { CATEGORIES, COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import { Expense, Member } from "@/utils/storage";
 import { formatCurrency, formatDate } from "@/utils/helpers";
+import { calculateMemberNets } from "@/utils/balance";
 
 interface Props {
   expense: Expense;
@@ -21,10 +22,24 @@ interface Props {
 }
 
 export function ExpenseCard({ expense, members, onDelete }: Props) {
-  const paidBy = members.find((m) => m.id === expense.paidById);
   const category = CATEGORIES.find((c) => c.key === expense.category) || CATEGORIES[CATEGORIES.length - 1];
   const translateX = useRef(new Animated.Value(0)).current;
   const showDelete = useRef(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const memberNets = calculateMemberNets(expense, members);
+
+  // Get payer information
+  const payerText = expense.payers.map((p) => {
+    const member = members.find((m) => m.id === p.memberId);
+    return `${member?.name || "Unknown"} (${formatCurrency(p.amountPaid)})`;
+  }).join(", ");
+
+  // Get split among information
+  const splitAmongText = expense.splitAmong.map((id) => {
+    const member = members.find((m) => m.id === id);
+    return member?.name || "Unknown";
+  }).join(", ");
 
   const panResponder = useRef(
     PanResponder.create({
@@ -72,12 +87,21 @@ export function ExpenseCard({ expense, members, onDelete }: Props) {
         </View>
         <View style={styles.info}>
           <Text style={styles.title} numberOfLines={1}>{expense.title}</Text>
+          {expense.description && (
+            <Text style={styles.description} numberOfLines={1}>{expense.description}</Text>
+          )}
           <Text style={styles.meta}>
-            Paid by {paidBy?.name || "Someone"} · {formatDate(expense.date)}
+            Paid by {payerText}
+          </Text>
+          <Text style={styles.meta}>
+            Split among: {splitAmongText}
           </Text>
         </View>
         <View style={styles.right}>
           <Text style={styles.amount}>{formatCurrency(expense.amount)}</Text>
+          <TouchableOpacity onPress={() => setExpanded(!expanded)} style={styles.expandBtn}>
+            <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={COLORS.textSecondary} />
+          </TouchableOpacity>
           {Platform.OS === "web" && (
             <TouchableOpacity onPress={handleDelete} style={styles.webDelete}>
               <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
@@ -85,6 +109,32 @@ export function ExpenseCard({ expense, members, onDelete }: Props) {
           )}
         </View>
       </Animated.View>
+
+      {expanded && (
+        <View style={styles.expandedContent}>
+          <Text style={styles.expandedTitle}>Net for this expense:</Text>
+          {memberNets.map((mn) => {
+            const isPositive = mn.net > 0.01;
+            const isNegative = mn.net < -0.01;
+            const isZero = !isPositive && !isNegative;
+            return (
+              <View key={mn.memberId} style={styles.netRow}>
+                <Text style={styles.netName}>{mn.name}</Text>
+                <Text
+                  style={[
+                    styles.netAmount,
+                    isPositive && styles.netPositive,
+                    isNegative && styles.netNegative,
+                    isZero && styles.netZero,
+                  ]}
+                >
+                  {isZero ? "Even" : isPositive ? `Gets back ${formatCurrency(mn.net)}` : `Owes ${formatCurrency(Math.abs(mn.net))}`}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -134,9 +184,61 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     marginBottom: 2,
   },
-  meta: {
+  description: {
     fontSize: FONT_SIZE.sm,
     fontFamily: "Inter_400Regular",
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  meta: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textSecondary,
+    marginBottom: 1,
+  },
+  expandBtn: {
+    padding: 4,
+  },
+  expandedContent: {
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginTop: -SPACING.sm + 2,
+    marginBottom: SPACING.sm,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  expandedTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_600SemiBold",
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
+  },
+  netRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: SPACING.xs,
+  },
+  netName: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textPrimary,
+  },
+  netAmount: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_600SemiBold",
+  },
+  netPositive: {
+    color: COLORS.success,
+  },
+  netNegative: {
+    color: COLORS.danger,
+  },
+  netZero: {
     color: COLORS.textSecondary,
   },
   right: {

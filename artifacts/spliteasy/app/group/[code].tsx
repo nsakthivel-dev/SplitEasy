@@ -27,9 +27,11 @@ import {
   Expense,
   Member,
   Split,
+  Payer,
 } from "@/utils/storage";
 import { generateId, formatCurrency, formatDate } from "@/utils/helpers";
 import { calculateBalances, simplifyDebts, Debt, MemberBalance } from "@/utils/balance";
+import { pickContact, ContactInfo } from "@/utils/contactPicker";
 import { ExpenseCard } from "@/components/ExpenseCard";
 import { BalanceCard } from "@/components/BalanceCard";
 import { DebtRow } from "@/components/DebtRow";
@@ -37,6 +39,7 @@ import { SettlementRow } from "@/components/SettlementRow";
 import { EmptyState } from "@/components/EmptyState";
 import { CategoryChip } from "@/components/CategoryChip";
 import { Toast, useToast } from "@/components/Toast";
+import { MemberAvatar } from "@/components/MemberAvatar";
 
 type Tab = "expenses" | "balances" | "settle";
 
@@ -48,24 +51,37 @@ export default function GroupDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("expenses");
   const [refreshing, setRefreshing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMemberModal, setShowMemberModal] = useState(false);
   const { toastMsg, toastVisible, showToast, hideToast } = useToast();
 
+  // Member management state
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberPhone, setNewMemberPhone] = useState<string | null>(null);
+  const [newMemberAvatar, setNewMemberAvatar] = useState<string | null>(null);
+  const [duplicatePhoneError, setDuplicatePhoneError] = useState("");
+
   // Add expense form state
-  const [expTitle, setExpTitle] = useState("");
+  const [expDescription, setExpDescription] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expCategory, setExpCategory] = useState<CategoryKey>("food");
-  const [expPaidBy, setExpPaidBy] = useState("");
-  const [expSplitType, setExpSplitType] = useState<"equal" | "custom">("equal");
-  const [expCustomSplits, setExpCustomSplits] = useState<Record<string, string>>({});
+  const [expPaidBy, setExpPaidBy] = useState<string[]>([]);
+  const [expPayerAmounts, setExpPayerAmounts] = useState<Record<string, string>>({});
+  const [expSplitAmong, setExpSplitAmong] = useState<string[]>([]);
+  
+  // Validation errors
+  const [payerAmountError, setPayerAmountError] = useState("");
+  const [splitAmongError, setSplitAmongError] = useState("");
+  const [amountError, setAmountError] = useState("");
 
   const loadGroup = useCallback(async () => {
     if (!code) return;
     const g = await getGroupByCode(code);
     setGroup(g);
-    if (g && !expPaidBy) {
-      setExpPaidBy(g.members[0]?.id || "");
+    if (g && expPaidBy.length === 0) {
+      setExpPaidBy([g.members[0]?.id || ""]);
+      setExpSplitAmong(g.members.map((m) => m.id)); // Default: split among all
     }
-  }, [code]);
+  }, [code, expPaidBy.length]);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,53 +103,69 @@ export default function GroupDashboard() {
   };
 
   const resetForm = () => {
-    setExpTitle("");
+    setExpDescription("");
     setExpAmount("");
     setExpCategory("food");
-    setExpSplitType("equal");
-    setExpCustomSplits({});
-    if (group) setExpPaidBy(group.members[0]?.id || "");
+    setExpSplitAmong(group?.members.map((m) => m.id) || []);
+    setExpPayerAmounts({});
+    setPayerAmountError("");
+    setSplitAmongError("");
+    setAmountError("");
+    if (group) setExpPaidBy([group.members[0]?.id || ""]);
   };
 
   const handleAddExpense = async () => {
     if (!group) return;
-    if (!expTitle.trim()) {
-      Alert.alert("Missing Info", "Please enter an expense title.");
-      return;
-    }
+    
+    // Validate amount
     const amt = parseFloat(expAmount);
     if (!expAmount || isNaN(amt) || amt <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount.");
+      setAmountError("Amount must be a positive number");
+      return;
+    }
+    setAmountError("");
+
+    // Validate at least one payer
+    if (expPaidBy.length === 0) {
+      Alert.alert("Missing Info", "Please select at least one payer.");
       return;
     }
 
-    let splits: Split[];
-    if (expSplitType === "equal") {
-      const share = Math.round((amt / group.members.length) * 100) / 100;
-      splits = group.members.map((m) => ({ memberId: m.id, amountOwed: share }));
-    } else {
-      const total = Object.values(expCustomSplits).reduce(
-        (s, v) => s + (parseFloat(v) || 0),
-        0
-      );
-      if (Math.abs(total - amt) > 0.5) {
-        Alert.alert("Invalid Split", `Custom splits must add up to ${formatCurrency(amt)}`);
-        return;
-      }
-      splits = group.members.map((m) => ({
-        memberId: m.id,
-        amountOwed: parseFloat(expCustomSplits[m.id] || "0") || 0,
-      }));
-    }
+    // Validate payer amounts sum to total
+    const payerSum = expPaidBy.reduce((sum, id) => {
+      return sum + (parseFloat(expPayerAmounts[id] || "0") || 0);
+    }, 0);
 
+    if (Math.abs(payerSum - amt) > 0.01) {
+      setPayerAmountError(`Payer amounts (${formatCurrency(payerSum)}) must sum to ${formatCurrency(amt)}`);
+      return;
+    }
+    setPayerAmountError("");
+
+    // Validate at least one person in split-among
+    if (expSplitAmong.length === 0) {
+      setSplitAmongError("At least one person must be selected");
+      return;
+    }
+    setSplitAmongError("");
+
+    // Create payers array
+    const payers: Payer[] = expPaidBy.map((memberId) => ({
+      memberId,
+      amountPaid: parseFloat(expPayerAmounts[memberId] || "0") || 0,
+    }));
+
+    // Create expense with splitAmong
     const expense: Expense = {
       id: generateId(),
-      title: expTitle.trim(),
+      title: expDescription.trim() || "Untitled Expense",
+      description: expDescription.trim() || undefined,
       amount: amt,
       category: expCategory,
-      paidById: expPaidBy,
       date: new Date().toISOString(),
-      splits,
+      payers,
+      splitAmong: expSplitAmong,
+      splits: [], // Will be calculated from nets
     };
 
     const updated = { ...group, expenses: [...group.expenses, expense] };
@@ -167,6 +199,113 @@ export default function GroupDashboard() {
     showToast("Marked as paid!");
   };
 
+  const handleAddMember = async () => {
+    if (!group) return;
+    const name = newMemberName.trim();
+    if (!name) {
+      Alert.alert("Missing Info", "Please enter a member name.");
+      return;
+    }
+
+    // Check for duplicate names
+    if (group.members.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
+      Alert.alert("Duplicate", "A member with this name already exists.");
+      return;
+    }
+
+    // Check for duplicate phone number
+    if (newMemberPhone) {
+      const phoneExists = group.members.some(
+        (m) => m.phoneNumber && m.phoneNumber === newMemberPhone
+      );
+      if (phoneExists) {
+        setDuplicatePhoneError("This contact is already in the group");
+        return;
+      }
+    }
+
+    const updated = {
+      ...group,
+      members: [
+        ...group.members,
+        {
+          id: generateId(),
+          name,
+          phoneNumber: newMemberPhone || null,
+          avatarUri: newMemberAvatar || null,
+          addedFromContacts: !!newMemberPhone,
+        },
+      ],
+    };
+    await saveGroup(updated);
+    setGroup(updated);
+    setNewMemberName("");
+    setNewMemberPhone(null);
+    setNewMemberAvatar(null);
+    setDuplicatePhoneError("");
+    showToast("Member added!");
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handlePickFromContacts = async () => {
+    const contactInfo = await pickContact();
+    if (!contactInfo) return;
+
+    setNewMemberName(contactInfo.name);
+    setNewMemberPhone(contactInfo.phoneNumber);
+    setNewMemberAvatar(contactInfo.avatarUri);
+    setDuplicatePhoneError("");
+
+    // Check for duplicate phone number immediately
+    if (contactInfo.phoneNumber && group) {
+      const phoneExists = group.members.some(
+        (m) => m.phoneNumber && m.phoneNumber === contactInfo.phoneNumber
+      );
+      if (phoneExists) {
+        setDuplicatePhoneError("This contact is already in the group");
+      }
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!group) return;
+    const member = group.members.find((m) => m.id === memberId);
+    if (!member) return;
+
+    // Check if member appears in any expense
+    const appearsInExpense = group.expenses.some(
+      (exp) =>
+        exp.payers.some((p) => p.memberId === memberId) ||
+        exp.splitAmong.includes(memberId)
+    );
+
+    if (appearsInExpense) {
+      Alert.alert(
+        "Cannot Remove",
+        `${member.name} cannot be removed because they appear in existing expenses. Delete those expenses first.`
+      );
+      return;
+    }
+
+    Alert.alert("Remove Member", `Remove ${member.name} from the group?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          const updated = {
+            ...group,
+            members: group.members.filter((m) => m.id !== memberId),
+          };
+          await saveGroup(updated);
+          setGroup(updated);
+          showToast("Member removed");
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        },
+      },
+    ]);
+  };
+
   if (!group) {
     return (
       <View style={styles.root}>
@@ -198,10 +337,6 @@ export default function GroupDashboard() {
   const topPad = Platform.OS === "web" ? 67 : 0;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const equalShare = expAmount && !isNaN(parseFloat(expAmount)) && group.members.length > 0
-    ? parseFloat(expAmount) / group.members.length
-    : 0;
-
   return (
     <View style={styles.root}>
       {/* Group Header */}
@@ -211,10 +346,19 @@ export default function GroupDashboard() {
             <Text style={styles.groupName} numberOfLines={1}>{group.name}</Text>
             <Text style={styles.memberCount}>{group.members.length} members</Text>
           </View>
-          <TouchableOpacity style={styles.codeBox} onPress={copyCode} activeOpacity={0.7}>
-            <Text style={styles.codeText}>{group.code}</Text>
-            <Ionicons name="copy-outline" size={14} color={COLORS.primary} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.manageMembersBtn}
+              onPress={() => setShowMemberModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="people-outline" size={18} color={COLORS.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.codeBox} onPress={copyCode} activeOpacity={0.7}>
+              <Text style={styles.codeText}>{group.code}</Text>
+              <Ionicons name="copy-outline" size={14} color={COLORS.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
         {/* Tab Bar */}
         <View style={styles.tabs}>
@@ -392,105 +536,164 @@ export default function GroupDashboard() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.fieldLabel}>Title</Text>
+            <Text style={styles.fieldLabel}>Description (Optional)</Text>
             <TextInput
               style={styles.formInput}
               placeholder="What was this for?"
               placeholderTextColor={COLORS.textSecondary}
-              value={expTitle}
-              onChangeText={setExpTitle}
+              value={expDescription}
+              onChangeText={setExpDescription}
             />
 
-            <Text style={styles.fieldLabel}>Amount</Text>
+            <Text style={styles.fieldLabel}>Total Amount *</Text>
             <View style={styles.amountRow}>
               <View style={styles.currencyBadge}>
                 <Text style={styles.currencyText}>₹</Text>
               </View>
               <TextInput
-                style={[styles.formInput, { flex: 1 }]}
+                style={[styles.formInput, { flex: 1 }, amountError && styles.inputError]}
                 placeholder="0.00"
                 placeholderTextColor={COLORS.textSecondary}
                 value={expAmount}
-                onChangeText={setExpAmount}
+                onChangeText={(v) => {
+                  setExpAmount(v);
+                  setAmountError("");
+                  const totalAmt = parseFloat(v) || 0;
+                  if (totalAmt > 0 && expPaidBy.length > 0) {
+                    const equalPayerShare = (totalAmt / expPaidBy.length).toFixed(2);
+                    const newPayerAmounts: Record<string, string> = {};
+                    expPaidBy.forEach((id) => {
+                      newPayerAmounts[id] = equalPayerShare;
+                    });
+                    setExpPayerAmounts(newPayerAmounts);
+                    setPayerAmountError("");
+                  }
+                }}
                 keyboardType="decimal-pad"
               />
             </View>
+            {amountError && <Text style={styles.errorText}>{amountError}</Text>}
 
             <Text style={styles.fieldLabel}>Category</Text>
             <CategoryChip selected={expCategory} onSelect={setExpCategory} />
 
-            <Text style={styles.fieldLabel}>Paid by</Text>
+            <Text style={styles.fieldLabel}>Who Paid? *</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.memberPicker}>
-              {group.members.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[
-                    styles.memberChip,
-                    expPaidBy === m.id && styles.memberChipActive,
-                  ]}
-                  onPress={() => setExpPaidBy(m.id)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.memberChipText, expPaidBy === m.id && styles.memberChipTextActive]}>
-                    {m.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {group.members.map((m) => {
+                const isSelected = expPaidBy.includes(m.id);
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.memberChip,
+                      isSelected && styles.memberChipActive,
+                    ]}
+                    onPress={() => {
+                      setExpPaidBy((prev) => {
+                        const newPaidBy = prev.includes(m.id)
+                          ? prev.filter((id) => id !== m.id)
+                          : [...prev, m.id];
+
+                        // Auto-fill equal amounts for payers if total amount is set
+                        const totalAmt = parseFloat(expAmount) || 0;
+                        if (totalAmt > 0 && newPaidBy.length > 0) {
+                          const equalPayerShare = (totalAmt / newPaidBy.length).toFixed(2);
+                          const newPayerAmounts: Record<string, string> = {};
+                          newPaidBy.forEach((id) => {
+                            newPayerAmounts[id] = equalPayerShare;
+                          });
+                          setExpPayerAmounts(newPayerAmounts);
+                          setPayerAmountError("");
+                        }
+                        return newPaidBy;
+                      });
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.memberChipText, isSelected && styles.memberChipTextActive]}>
+                      {m.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
 
-            <Text style={styles.fieldLabel}>Split</Text>
-            <View style={styles.splitToggle}>
-              <TouchableOpacity
-                style={[styles.splitBtn, expSplitType === "equal" && styles.splitBtnActive]}
-                onPress={() => setExpSplitType("equal")}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.splitBtnText, expSplitType === "equal" && styles.splitBtnTextActive]}>
-                  Equal
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.splitBtn, expSplitType === "custom" && styles.splitBtnActive]}
-                onPress={() => setExpSplitType("custom")}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.splitBtnText, expSplitType === "custom" && styles.splitBtnTextActive]}>
-                  Custom
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {expSplitType === "equal" && equalShare > 0 && (
-              <View style={styles.equalSplitPreview}>
-                {group.members.map((m) => (
-                  <View key={m.id} style={styles.splitPreviewRow}>
-                    <Text style={styles.splitPreviewName}>{m.name}</Text>
-                    <Text style={styles.splitPreviewAmount}>{formatCurrency(equalShare)}</Text>
+            {expPaidBy.length > 1 && (
+              <View style={styles.customSplits}>
+                <Text style={styles.sectionLabel}>Amount Paid by Each</Text>
+                {expPaidBy.map((memberId) => {
+                  const member = group.members.find((m) => m.id === memberId);
+                  if (!member) return null;
+                  return (
+                    <View key={memberId} style={styles.customSplitRow}>
+                      <Text style={styles.customSplitName}>{member.name}</Text>
+                      <View style={styles.customAmountRow}>
+                        <Text style={styles.currencySmall}>₹</Text>
+                        <TextInput
+                          style={styles.customSplitInput}
+                          placeholder="0"
+                          placeholderTextColor={COLORS.textSecondary}
+                          value={expPayerAmounts[memberId] || ""}
+                          onChangeText={(v) => {
+                            setExpPayerAmounts((prev) => ({ ...prev, [memberId]: v }));
+                            setPayerAmountError("");
+                          }}
+                          keyboardType="decimal-pad"
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
+                {payerAmountError && <Text style={styles.errorText}>{payerAmountError}</Text>}
+                {expAmount && (
+                  <View style={styles.validationRow}>
+                    <Text style={styles.validationLabel}>Total:</Text>
+                    <Text style={styles.validationValue}>{formatCurrency(parseFloat(expAmount) || 0)}</Text>
                   </View>
-                ))}
+                )}
               </View>
             )}
 
-            {expSplitType === "custom" && (
-              <View style={styles.customSplits}>
-                {group.members.map((m) => (
-                  <View key={m.id} style={styles.customSplitRow}>
-                    <Text style={styles.customSplitName}>{m.name}</Text>
-                    <View style={styles.customAmountRow}>
-                      <Text style={styles.currencySmall}>₹</Text>
-                      <TextInput
-                        style={styles.customSplitInput}
-                        placeholder="0"
-                        placeholderTextColor={COLORS.textSecondary}
-                        value={expCustomSplits[m.id] || ""}
-                        onChangeText={(v) =>
-                          setExpCustomSplits((prev) => ({ ...prev, [m.id]: v }))
-                        }
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                  </View>
-                ))}
+            <Text style={styles.fieldLabel}>Split Among * (Equal Split)</Text>
+            <View style={styles.splitAmongContainer}>
+              {group.members.map((m) => {
+                const isSelected = expSplitAmong.includes(m.id);
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.splitAmongChip,
+                      isSelected && styles.splitAmongChipActive,
+                    ]}
+                    onPress={() => {
+                      setExpSplitAmong((prev) => {
+                        const newSplit = prev.includes(m.id)
+                          ? prev.filter((id) => id !== m.id)
+                          : [...prev, m.id];
+                        setSplitAmongError("");
+                        return newSplit;
+                      });
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons
+                      name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                      size={18}
+                      color={isSelected ? COLORS.white : COLORS.textSecondary}
+                    />
+                    <Text style={[styles.splitAmongText, isSelected && styles.splitAmongTextActive]}>
+                      {m.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {splitAmongError && <Text style={styles.errorText}>{splitAmongError}</Text>}
+            {expSplitAmong.length > 0 && expAmount && (
+              <View style={styles.splitPreview}>
+                <Text style={styles.splitPreviewText}>
+                  Each person pays: {formatCurrency(parseFloat(expAmount) / expSplitAmong.length)}
+                </Text>
               </View>
             )}
 
@@ -502,6 +705,101 @@ export default function GroupDashboard() {
               <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
               <Text style={styles.saveBtnText}>Save Expense</Text>
             </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Member Management Modal */}
+      <Modal visible={showMemberModal} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <ScrollView
+            style={styles.modal}
+            contentContainerStyle={[
+              styles.modalContent,
+              { paddingBottom: bottomPad + SPACING.xl },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Manage Members</Text>
+              <TouchableOpacity
+                onPress={() => setShowMemberModal(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close-circle" size={28} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.fieldLabel}>Current Members</Text>
+            {group.members.map((m, idx) => (
+              <View key={m.id} style={styles.memberRow}>
+                <MemberAvatar
+                  name={m.name}
+                  index={idx}
+                  size={40}
+                  avatarUri={m.avatarUri}
+                />
+                <View style={styles.memberInfo}>
+                  <Text style={styles.memberName}>{m.name}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.removeMemberBtn}
+                  onPress={() => handleRemoveMember(m.id)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={20} color={COLORS.danger} />
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            <View style={styles.addMemberSection}>
+              <Text style={styles.fieldLabel}>Add New Member</Text>
+              
+              {/* Add from contacts button */}
+              <TouchableOpacity
+                style={styles.contactPickerBtn}
+                onPress={handlePickFromContacts}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="person-add" size={20} color={COLORS.white} />
+                <Text style={styles.contactPickerBtnText}>Add from Contacts</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.orDivider}>— or type manually —</Text>
+              
+              <View style={styles.addMemberRow}>
+                <TextInput
+                  style={[styles.formInput, { flex: 1 }]}
+                  placeholder="Enter member name"
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={newMemberName}
+                  onChangeText={(text) => {
+                    setNewMemberName(text);
+                    setDuplicatePhoneError("");
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.addMemberBtn}
+                  onPress={handleAddMember}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add" size={24} color={COLORS.white} />
+                </TouchableOpacity>
+              </View>
+              {duplicatePhoneError && (
+                <Text style={styles.errorText}>{duplicatePhoneError}</Text>
+              )}
+              {newMemberPhone && (
+                <Text style={styles.contactHint}>
+                  <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />{" "}
+                  Selected from contacts
+                </Text>
+              )}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -837,5 +1135,165 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontFamily: "Inter_600SemiBold",
     color: COLORS.white,
+  },
+  inputError: {
+    borderColor: COLORS.danger,
+  },
+  errorText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.danger,
+    marginTop: SPACING.xs,
+  },
+  validationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  validationLabel: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_600SemiBold",
+    color: COLORS.textPrimary,
+  },
+  validationValue: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: "Inter_700Bold",
+    color: COLORS.primary,
+  },
+  splitAmongContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  splitAmongChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+  },
+  splitAmongChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  splitAmongText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_500Medium",
+    color: COLORS.textSecondary,
+  },
+  splitAmongTextActive: {
+    color: COLORS.white,
+  },
+  splitPreview: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginTop: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "40",
+  },
+  splitPreviewText: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_600SemiBold",
+    color: COLORS.primary,
+    textAlign: "center",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  manageMembersBtn: {
+    padding: SPACING.xs,
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: RADIUS.sm,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: "Inter_500Medium",
+    color: COLORS.textPrimary,
+  },
+  removeMemberBtn: {
+    padding: SPACING.xs,
+  },
+  addMemberSection: {
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  addMemberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  addMemberBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contactPickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.sm,
+    backgroundColor: COLORS.success,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
+    shadowColor: COLORS.success,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  contactPickerBtnText: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: "Inter_600SemiBold",
+    color: COLORS.white,
+  },
+  orDivider: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    marginVertical: SPACING.md,
+  },
+  contactHint: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.success,
+    marginTop: SPACING.xs,
+    flexDirection: "row",
+    alignItems: "center",
   },
 });

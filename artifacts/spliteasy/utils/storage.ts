@@ -3,6 +3,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export interface Member {
   id: string;
   name: string;
+  phoneNumber?: string | null;
+  avatarUri?: string | null;
+  addedFromContacts?: boolean;
 }
 
 export interface Split {
@@ -10,14 +13,22 @@ export interface Split {
   amountOwed: number;
 }
 
+export interface Payer {
+  memberId: string;
+  amountPaid: number;
+}
+
 export interface Expense {
   id: string;
   title: string;
+  description?: string;
   amount: number;
   category: string;
-  paidById: string;
   date: string;
+  payers: Payer[];
+  splitAmong: string[]; // member IDs who this expense is split among
   splits: Split[];
+  memberNets?: Record<string, number>; // member ID -> net for this expense
 }
 
 export interface Settlement {
@@ -26,6 +37,17 @@ export interface Settlement {
   toId: string;
   amount: number;
   isPaid: boolean;
+}
+
+export interface MemberNet {
+  memberId: string;
+  name: string;
+  net: number;
+}
+
+export interface ExpenseDetail {
+  expense: Expense;
+  memberNets: MemberNet[];
 }
 
 export interface Group {

@@ -15,23 +15,33 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.spliteasy.app"
+      "bundleIdentifier": "com.spliteasy.app",
+      "infoPlist": {
+        "NSContactsUsageDescription": "SplitEasy uses contacts to help you quickly add members to your expense groups by selecting from your phone's contact list."
+      }
     },
     "android": {
-      "package": "com.spliteasy.app"
+      "package": "com.spliteasy.app",
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
+      "expo-router",
+      "expo-font",
       [
-        "expo-router",
+        "expo-contacts",
         {
-          "origin": "https://replit.com/"
+          "contactsPermission": "SplitEasy uses contacts to help you quickly add members to your expense groups by selecting from your phone's contact list."
         }
-      ],
-      "expo-font"
+      ]
     ],
+    "updates": {
+      "enabled": false
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

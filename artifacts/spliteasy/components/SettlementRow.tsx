@@ -37,11 +37,23 @@ export function SettlementRow({ settlement, members, onMarkPaid }: Props) {
 
   return (
     <View style={styles.row}>
-      <MemberAvatar name={from?.name || "?"} index={fromIdx} size={36} fontSize={13} />
+      <MemberAvatar
+        name={from?.name || "?"}
+        index={fromIdx}
+        size={36}
+        fontSize={13}
+        avatarUri={from?.avatarUri}
+      />
       <View style={styles.arrowWrap}>
         <Ionicons name="arrow-forward" size={16} color={COLORS.textSecondary} />
       </View>
-      <MemberAvatar name={to?.name || "?"} index={toIdx} size={36} fontSize={13} />
+      <MemberAvatar
+        name={to?.name || "?"}
+        index={toIdx}
+        size={36}
+        fontSize={13}
+        avatarUri={to?.avatarUri}
+      />
       <View style={styles.info}>
         <Text style={styles.names}>
           {from?.name} → {to?.name}

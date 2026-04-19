@@ -1,0 +1,1 @@
+cd c:\Users\nsakt\Downloads\Split-Ease\Split-Ease\artifacts\spliteasy; $env:REACT_NATIVE_PACKAGER_HOSTNAME='192.168.31.180'; npx expo start --lan

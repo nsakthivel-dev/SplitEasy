@@ -1,4 +1,4 @@
-import { Expense, Member, Settlement } from "./storage";
+import { Expense, Member, Settlement, MemberNet } from "./storage";
 import { generateId } from "./helpers";
 
 export interface MemberBalance {
@@ -14,34 +14,58 @@ export interface Debt {
   amount: number;
 }
 
+export function calculateMemberNets(expense: Expense, members: Member[]): MemberNet[] {
+  const splitAmongCount = expense.splitAmong.length;
+  if (splitAmongCount === 0) return [];
+
+  const sharePerPerson = expense.amount / splitAmongCount;
+  const nets: Record<string, number> = {};
+
+  // Initialize all members with 0
+  for (const m of members) {
+    nets[m.id] = 0;
+  }
+
+  // Calculate net for each member: paid - share
+  for (const m of members) {
+    const paidAmount = expense.payers.find((p) => p.memberId === m.id)?.amountPaid || 0;
+    const isSplitAmong = expense.splitAmong.includes(m.id);
+    const owedAmount = isSplitAmong ? sharePerPerson : 0;
+    nets[m.id] = paidAmount - owedAmount;
+  }
+
+  return members.map((m) => ({
+    memberId: m.id,
+    name: m.name,
+    net: Math.round(nets[m.id] * 100) / 100,
+  }));
+}
+
 export function calculateBalances(
   members: Member[],
   expenses: Expense[]
 ): MemberBalance[] {
-  const totalPaid: Record<string, number> = {};
-  const totalOwed: Record<string, number> = {};
-
+  // Initialize balances
+  const netBalance: Record<string, number> = {};
   for (const m of members) {
-    totalPaid[m.id] = 0;
-    totalOwed[m.id] = 0;
+    netBalance[m.id] = 0;
   }
 
+  // Recalculate from scratch for each expense
   for (const exp of expenses) {
-    if (totalPaid[exp.paidById] !== undefined) {
-      totalPaid[exp.paidById] += exp.amount;
-    }
-    for (const split of exp.splits) {
-      if (totalOwed[split.memberId] !== undefined) {
-        totalOwed[split.memberId] += split.amountOwed;
+    const memberNets = calculateMemberNets(exp, members);
+    for (const mn of memberNets) {
+      if (netBalance[mn.memberId] !== undefined) {
+        netBalance[mn.memberId] += mn.net;
       }
     }
   }
 
   return members.map((m) => ({
     member: m,
-    totalPaid: totalPaid[m.id] || 0,
-    totalOwed: totalOwed[m.id] || 0,
-    net: (totalPaid[m.id] || 0) - (totalOwed[m.id] || 0),
+    totalPaid: 0, // We're using net directly now
+    totalOwed: 0,
+    net: Math.round(netBalance[m.id] * 100) / 100,
   }));
 }
 

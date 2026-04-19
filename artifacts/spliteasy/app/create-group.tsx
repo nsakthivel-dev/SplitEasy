@@ -15,27 +15,45 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
-import { saveGroup } from "@/utils/storage";
+import { saveGroup, Member } from "@/utils/storage";
 import { generateCode, generateId } from "@/utils/helpers";
+import { pickContact } from "@/utils/contactPicker";
 
 export default function CreateGroupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [groupName, setGroupName] = useState("");
   const [yourName, setYourName] = useState("");
-  const [members, setMembers] = useState<string[]>([""]);
+  const [members, setMembers] = useState<Array<{ name: string; phoneNumber?: string | null; avatarUri?: string | null }>>([
+    { name: "" }
+  ]);
   const [loading, setLoading] = useState(false);
 
   const addMember = () => {
-    setMembers((m) => [...m, ""]);
+    setMembers((m) => [...m, { name: "" }]);
   };
 
   const updateMember = (idx: number, val: string) => {
-    setMembers((m) => m.map((n, i) => (i === idx ? val : n)));
+    setMembers((m) => m.map((n, i) => (i === idx ? { ...n, name: val } : n)));
   };
 
   const removeMember = (idx: number) => {
     setMembers((m) => m.filter((_, i) => i !== idx));
+  };
+
+  const handlePickContactForIndex = async (idx: number) => {
+    const contactInfo = await pickContact();
+    if (!contactInfo) return;
+
+    setMembers((m) =>
+      m.map((member, i) =>
+        i === idx
+          ? { name: contactInfo.name, phoneNumber: contactInfo.phoneNumber, avatarUri: contactInfo.avatarUri }
+          : member
+      )
+    );
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   const handleCreate = async () => {
@@ -51,15 +69,32 @@ export default function CreateGroupScreen() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
 
-    const allMembers = [yourName.trim(), ...members.filter((m) => m.trim())];
-    const uniqueMembers = [...new Set(allMembers)];
+    const allMemberObjects: Member[] = [
+      { id: generateId(), name: yourName.trim() },
+      ...members
+        .filter((m) => m.name.trim())
+        .map((m) => ({
+          id: generateId(),
+          name: m.name.trim(),
+          phoneNumber: m.phoneNumber || null,
+          avatarUri: m.avatarUri || null,
+          addedFromContacts: !!m.phoneNumber,
+        })),
+    ];
+
+    // Check for duplicate names
+    const nameSet = new Set(allMemberObjects.map((m) => m.name.toLowerCase()));
+    if (nameSet.size !== allMemberObjects.length) {
+      Alert.alert("Duplicate", "There are duplicate member names. Please remove duplicates.");
+      return;
+    }
 
     const group = {
       id: generateId(),
       code: generateCode(),
       name: groupName.trim(),
       createdAt: new Date().toISOString(),
-      members: uniqueMembers.map((name) => ({ id: generateId(), name })),
+      members: allMemberObjects,
       expenses: [],
       settlements: [],
     };
@@ -105,15 +140,22 @@ export default function CreateGroupScreen() {
 
         <View style={styles.section}>
           <Text style={styles.label}>Other Members</Text>
-          {members.map((name, idx) => (
+          {members.map((member, idx) => (
             <View key={idx} style={styles.memberRow}>
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder={`Member ${idx + 2}`}
                 placeholderTextColor={COLORS.textSecondary}
-                value={name}
+                value={member.name}
                 onChangeText={(v) => updateMember(idx, v)}
               />
+              <TouchableOpacity
+                style={styles.contactBtn}
+                onPress={() => handlePickContactForIndex(idx)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="person" size={18} color={COLORS.success} />
+              </TouchableOpacity>
               {members.length > 1 && (
                 <TouchableOpacity
                   style={styles.removeBtn}
@@ -181,6 +223,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.sm,
+  },
+  contactBtn: {
+    padding: SPACING.sm,
+    backgroundColor: COLORS.success + "15",
+    borderRadius: RADIUS.sm,
   },
   removeBtn: {
     padding: SPACING.xs,

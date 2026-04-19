@@ -16,7 +16,12 @@ export function BalanceCard({ balance, index }: Props) {
 
   return (
     <View style={styles.card}>
-      <MemberAvatar name={balance.member.name} index={index} size={44} />
+      <MemberAvatar
+        name={balance.member.name}
+        index={index}
+        size={44}
+        avatarUri={balance.member.avatarUri}
+      />
       <View style={styles.info}>
         <Text style={styles.name}>{balance.member.name}</Text>
         <Text style={styles.paid}>Paid {formatCurrency(balance.totalPaid)}</Text>
